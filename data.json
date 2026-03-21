@@ -1,6 +1,22 @@
 {
   "rooms": [
     {
+      "id": "92d1eaa0-3108-4839-b69c-6a45c2d9b780",
+      "name": "Łazienka",
+      "tasks": [
+        {
+          "id": "ca75f95e-0601-44cb-8d38-4833beb05c35",
+          "name": "Powiesić pranie",
+          "week_days": [],
+          "frequency": null,
+          "priority": 2,
+          "one_time": true,
+          "last_done": null,
+          "created_at": "2026-03-21"
+        }
+      ]
+    },
+    {
       "id": "e1b8f9c7-f9da-4e90-8cb2-6898c8c539c2",
       "name": "Kuchnia",
       "tasks": [
@@ -31,22 +47,6 @@
           "frequency": null,
           "priority": 3,
           "one_time": false,
-          "last_done": null,
-          "created_at": "2026-03-21"
-        }
-      ]
-    },
-    {
-      "id": "92d1eaa0-3108-4839-b69c-6a45c2d9b780",
-      "name": "Łazienka",
-      "tasks": [
-        {
-          "id": "ca75f95e-0601-44cb-8d38-4833beb05c35",
-          "name": "Powiesić pranie",
-          "week_days": [],
-          "frequency": null,
-          "priority": 2,
-          "one_time": true,
           "last_done": null,
           "created_at": "2026-03-21"
         }
