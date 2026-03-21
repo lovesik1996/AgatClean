@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Projects\AgatClean\app.py", line 1, in <module>
+    from flask import Flask, request, redirect, url_for, render_template_string
+ModuleNotFoundError: No module named 'flask'
