@@ -33,6 +33,8 @@ def load_data():
     data["meta"].setdefault("last_corridor_added", "")
     # Migracja: konwersja week_day (liczba) na week_days (lista)
     for _r in data.get("rooms", []):
+        # Migracja: dodaj kolor pokoju jeśli go brak
+        _r.setdefault("color", "#f5f5f5")
         for _t in _r.get("tasks", []):
             if "week_day" in _t and _t["week_day"] is not None and "week_days" not in _t:
                 # Stara struktura: skonwertuj na nową
@@ -211,10 +213,10 @@ BASE = r"""<!doctype html>
       </div>
     </a>
     <div class="ms-auto d-flex gap-2 flex-wrap">
-      <a class="btn btn-outline-primary btn-sm" href="/manage">&#9881; Panel</a>
-      <a class="btn btn-outline-success btn-sm" href="/schedule">&#128197; Harmonogram</a>
-      <a class="btn btn-outline-warning btn-sm" href="/quick">&#9201; Malo czasu</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/settings">&#9965; Ustawienia</a>
+      <a class="btn btn-outline-primary btn-sm" href="/manage">Panel</a>
+      <a class="btn btn-outline-success btn-sm" href="/schedule">Harmonogram</a>
+      <a class="btn btn-outline-warning btn-sm" href="/quick">Malo czasu</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/settings">Ustawienia</a>
     </div>
   </div>
 </nav>
@@ -244,6 +246,7 @@ def index():
                 tasks_today.append({
                     "room_id": room["id"],
                     "room_name": room["name"],
+                    "room_color": room.get("color", "#f5f5f5"),
                     "task": t,
                     "overdue_days": overdue_days,
                     "next_due": iso(next_due)
@@ -254,11 +257,11 @@ def index():
 <div class="row g-4">
   <div class="col-lg-8">
     <div class="card p-3 p-md-4">
-      <h5 class="mb-3">&#128336; Zadania na dzis</h5>
+      <h5 class="mb-3">Zadania na dzis</h5>
       {% if tasks %}
         {% for item in tasks %}
           {% set p = item.task.priority | int %}
-          <div class="task-card priority-{{ p }} d-flex justify-content-between align-items-center">
+          <div class="task-card priority-{{ p }} d-flex justify-content-between align-items-center" style="background-color: {{ item.room_color }}; border: 2px solid {{ item.room_color }}; opacity: 0.95;">
             <div>
               <div style="font-weight:600; font-size:1rem;">
                 {{ item.task.name }}
@@ -267,9 +270,8 @@ def index():
               <div class="small-muted mt-1">
                 Pokoj: <strong>{{ item.room_name }}</strong>
                 {% if not item.task.one_time %}
-                  &bull;
                   {% if item.task.week_days %}{{ week_days_str(week_day_names, item.task.week_days) }}{% elif item.task.frequency %}Co {{ item.task.frequency }} dni{% endif %}
-                  &bull; Ostatnio: {{ item.task.last_done or "&#8212;" }}
+                  Ostatnio: {{ item.task.last_done or "-" }}
                 {% endif %}
               </div>
             </div>
@@ -278,19 +280,19 @@ def index():
                 <div class="overdue-badge mb-1">+{{ item.overdue_days }} dni</div>
               {% endif %}
               <form method="post" action="{{ url_for('mark_done', task_id=item.task.id) }}">
-                <button class="btn btn-success btn-sm">&#10003; Zrobione</button>
+                <button class="btn btn-success btn-sm">Zrobione</button>
               </form>
             </div>
           </div>
         {% endfor %}
       {% else %}
-        <div class="text-muted py-3">&#127775; Brak zadan na dzis!</div>
+        <div class="text-muted py-3">Brak zadan na dzis!</div>
       {% endif %}
     </div>
   </div>
   <div class="col-lg-4">
     <div class="card p-3">
-      <h6 class="mb-3">&#127968; Pokoje</h6>
+      <h6 class="mb-3">Pokoje</h6>
       {% if rooms %}
         <ul class="list-group list-group-flush">
           {% for r in rooms %}
@@ -333,16 +335,22 @@ def manage():
   <!-- LEWA KOLUMNA: Pokoje + Dodaj zadanie -->
   <div class="col-lg-4">
     <div class="card p-3 p-md-4 mb-4">
-      <h5 class="mb-3">&#10133; Dodaj pok&oacute;j</h5>
+      <h5 class="mb-3">Dodaj pokój</h5>
       <form method="post" action="{{ url_for('add_room') }}">
-        <div class="input-group">
+        <div class="mb-2">
           <input name="name" class="form-control" placeholder="Nazwa pokoju" required>
-          <button class="btn btn-primary">Dodaj</button>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small-muted">Kolor pokoju</label>
+          <div class="input-group">
+            <input type="color" name="color" class="form-control form-control-color" value="#f5f5f5" title="Wybierz kolor">
+            <button class="btn btn-primary" type="submit">Dodaj</button>
+          </div>
         </div>
       </form>
     </div>
     <div class="card p-3 p-md-4 mb-4">
-      <h5 class="mb-3">&#10133; Dodaj zadanie</h5>
+      <h5 class="mb-3">Dodaj zadanie</h5>
       {% if rooms %}
       <form method="post" action="{{ url_for('add_task') }}">
         <div class="mb-2">
@@ -357,7 +365,7 @@ def manage():
         </div>
         <div class="mb-2 form-check">
           <input class="form-check-input" type="checkbox" name="one_time" value="1" id="oneTimeCheck">
-          <label class="form-check-label small-muted" for="oneTimeCheck">Zadanie jednorazowe / na dzi&#347;</label>
+          <label class="form-check-label small-muted" for="oneTimeCheck">Zadanie jednorazowe / na dzis</label>
         </div>
         <div id="freqRow">
           <div class="mb-2">
@@ -376,7 +384,7 @@ def manage():
             <label class="form-label small-muted">Priorytet</label>
             <select name="priority" class="form-select">
               <option value="3">3 - Wysoki</option>
-              <option value="2" selected>2 - &#346;redni</option>
+              <option value="2" selected>2 - Sredni</option>
               <option value="1">1 - Niski</option>
             </select>
           </div>
@@ -384,7 +392,7 @@ def manage():
         <button class="btn btn-primary w-100">Dodaj zadanie</button>
       </form>
       {% else %}
-        <div class="small-muted">Najpierw dodaj pok&oacute;j.</div>
+        <div class="small-muted">Najpierw dodaj pokój.</div>
       {% endif %}
     </div>
   </div>
@@ -392,22 +400,26 @@ def manage():
   <!-- PRAWA KOLUMNA: Wszystkie zadania -->
   <div class="col-lg-8">
     <div class="card p-3 p-md-4">
-      <h5 class="mb-1">&#128196; Wszystkie zadania</h5>
-      <p class="small-muted mb-3">&#128161; Przeci&#261;gnij zadanie do innego pokoju, aby je przenie&#347;&#263;</p>
+      <h5 class="mb-1">Wszystkie zadania</h5>
+      <p class="small-muted mb-3">Przeciagnij zadanie do innego pokoju, aby je przeniesc</p>
       {% if rooms %}
         {% for r in rooms %}
         <div class="mb-4" data-room-id="{{ r.id }}">
           <div class="d-flex align-items-center gap-2 mb-2 pb-1" style="border-bottom:2px solid #e3eae5;">
-            <span style="font-size:1.1rem;">&#127968;</span>
-            <span class="fw-bold fs-6">{{ r.name }}</span>
-            <span class="badge bg-secondary rounded-pill ms-auto">{{ r.tasks | length }}</span>
+            <span style="font-size:1.1rem;">></span>
+            <span class="fw-bold fs-6" style="flex-grow:1;">{{ r.name }}</span>
+            <form method="post" action="{{ url_for('update_room_color', room_id=r.id) }}" class="d-flex gap-1 align-items-center m-0">
+              <input type="color" name="color" class="form-control form-control-color" value="{{ r.color }}" title="Zmien kolor pokoju" style="width:45px; height:38px; border:none; padding:2px;">
+              <button type="submit" class="btn btn-sm btn-outline-secondary" style="padding:4px 6px;">OK</button>
+            </form>
+            <span class="badge bg-secondary rounded-pill">{{ r.tasks | length }}</span>
           </div>
           <div class="tasks-list" data-room-id="{{ r.id }}"
                {% if not r.tasks %}style="padding:0.75rem 1rem; color:#999; border:1px dashed #ddd; border-radius:8px; background:#fafafa;"{% endif %}>
             {% if r.tasks %}
               {% for t in r.tasks %}
               <div class="task-card priority-{{ t.priority }} d-flex justify-content-between align-items-center"
-                   draggable="true" data-task-id="{{ t.id }}" data-room-id="{{ r.id }}">
+                   draggable="true" data-task-id="{{ t.id }}" data-room-id="{{ r.id }}" style="background-color: {{ r.color }}; border: 2px solid {{ r.color }}; opacity: 0.95;">
                 <div style="flex:1; min-width:0;">
                   <div style="font-weight:600; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     {{ t.name }}
@@ -416,7 +428,7 @@ def manage():
                   <div class="small-muted mt-1">
                     {% if not t.one_time %}
                       {% if t.week_days %}{{ week_days_str(week_day_names, t.week_days) }}{% elif t.frequency %}Co {{ t.frequency }} dni{% endif %}
-                      &bull; Ostatnio: {{ t.last_done or "&#8212;" }} &bull;
+                      Ostatnio: {{ t.last_done or "-" }}
                     {% endif %}
                     <span class="badge {% if t.priority==3 %}bg-danger{% elif t.priority==2 %}bg-warning text-dark{% else %}bg-success{% endif %}">
                       P{{ t.priority }}
@@ -438,23 +450,23 @@ def manage():
                       <option {% if t.priority==2 %}selected{% endif %} value="2">2</option>
                       <option {% if t.priority==1 %}selected{% endif %} value="1">1</option>
                     </select>
-                    <button class="btn btn-sm btn-outline-secondary">&#128190;</button>
+                    <button class="btn btn-sm btn-outline-secondary">Edytuj</button>
                   </form>
                   <form method="post" action="{{ url_for('delete_task', task_id=t.id) }}"
-                        onsubmit="return confirm('Usun&#261;&#263; zadanie?')" class="m-0">
-                    <button class="btn btn-sm btn-outline-danger">&#128465;</button>
+                        onsubmit="return confirm('Usun To Zadanie?')" class="m-0">
+                    <button class="btn btn-sm btn-outline-danger">Usun</button>
                   </form>
                 </div>
               </div>
               {% endfor %}
             {% else %}
-              Brak zada&#324;
+              Brak zadan
             {% endif %}
           </div>
         </div>
         {% endfor %}
       {% else %}
-        <div class="small-muted py-3 text-center">Dodaj pok&oacute;j, aby m&oacute;c przypisywa&#263; zadania.</div>
+        <div class="small-muted py-3 text-center">Dodaj pokój, aby móc przypisywać zadania.</div>
       {% endif %}
     </div>
   </div>
@@ -577,10 +589,11 @@ document.addEventListener('DOMContentLoaded', function() {
 @app.route("/add_room", methods=["POST"])
 def add_room():
     name = (request.form.get("name") or "").strip()
+    color = (request.form.get("color") or "#f5f5f5").strip()
     if not name:
         return redirect(url_for("manage"))
     data = load_data()
-    data["rooms"].append({"id": str(uuid.uuid4()), "name": name, "tasks": []})
+    data["rooms"].append({"id": str(uuid.uuid4()), "name": name, "color": color, "tasks": []})
     save_data(data)
     return redirect(url_for("manage"))
 
@@ -698,6 +711,17 @@ def move_room(room_id):
     return redirect(url_for("manage"))
 
 
+@app.route("/update_room_color/<room_id>", methods=["POST"])
+def update_room_color(room_id):
+    color = (request.form.get("color") or "#f5f5f5").strip()
+    data = load_data()
+    room = find_room(data, room_id)
+    if room:
+        room["color"] = color
+        save_data(data)
+    return redirect(url_for("manage"))
+
+
 @app.route("/quick")
 def quick():
     data = load_data()
@@ -713,17 +737,15 @@ def quick():
 
     body = """
 <div class="card p-3 p-md-4">
-  <h5 class="mb-1">&#9201; Tryb: mam malo czasu</h5>
+  <h5 class="mb-1">Tryb: mam malo czasu</h5>
   <p class="small-muted mb-3">Pokazuje {{ cnt }} najwazniejszych zadan.</p>
   {% if tasks %}
     {% for it in tasks %}
-      <div class="task-card priority-{{ it.task.priority }} d-flex justify-content-between align-items-center">
+      <div class="task-card priority-{{ it.task.priority }} d-flex justify-content-between align-items-center" style="background-color: {{ it.room.color }}; border: 2px solid {{ it.room.color }}; opacity: 0.95;">
         <div>
           <div style="font-weight:600; font-size:1rem;">{{ it.task.name }}</div>
           <div class="small-muted mt-1">
-            Pokoj: <strong>{{ it.room.name }}</strong> &bull;
-            Priorytet {{ it.task.priority }} &bull;
-            Ostatnio: {{ it.task.last_done or "&#8212;" }}
+            Pokoj: <strong>{{ it.room.name }}</strong> | Priorytet {{ it.task.priority }} | Ostatnio: {{ it.task.last_done or "-" }}
           </div>
         </div>
         <div class="text-end ms-3">
@@ -731,13 +753,13 @@ def quick():
             <div class="overdue-badge mb-1">+{{ it.overdue_days }} dni</div>
           {% endif %}
           <form method="post" action="{{ url_for('mark_done', task_id=it.task.id) }}">
-            <button class="btn btn-success btn-sm">&#10003; Zrobione</button>
+            <button class="btn btn-success btn-sm">Zrobione</button>
           </form>
         </div>
       </div>
     {% endfor %}
   {% else %}
-    <div class="text-muted py-3">&#127775; Brak zaleglych zadan!</div>
+    <div class="text-muted py-3">Brak zaległych zadan!</div>
   {% endif %}
 </div>
 """
@@ -767,7 +789,7 @@ def settings():
 <div class="row justify-content-center">
   <div class="col-lg-6">
     <div class="card p-3 p-md-4">
-      <h5 class="mb-3">&#9965; Ustawienia</h5>
+      <h5 class="mb-3">Ustawienia</h5>
       {% if saved %}
         <div class="alert alert-success py-2">Zapisano!</div>
       {% endif %}
@@ -788,7 +810,7 @@ def settings():
           <label class="form-label fw-semibold">Liczba zadan w trybie mam malo czasu</label>
           <input name="quick_count" type="number" min="1" class="form-control" value="{{ s.quick_count }}">
         </div>
-        <button class="btn btn-primary w-100">&#128190; Zapisz ustawienia</button>
+        <button class="btn btn-primary w-100">Zapisz ustawienia</button>
       </form>
       <hr>
       <div class="small-muted">Ostatnie dodanie dyzuru: <strong>{{ meta.last_corridor_added or "brak" }}</strong></div>
@@ -809,7 +831,7 @@ def schedule_view():
             # Dodaj zadanie dla każdego przypisanego dnia
             for wd in week_days:
                 if 0 <= wd < 7:
-                    sched[int(wd)].append({"room_name": room["name"], "task": t})
+                    sched[int(wd)].append({"room_name": room["name"], "room_color": room.get("color", "#f5f5f5"), "task": t})
     for day_list in sched:
         day_list.sort(key=lambda x: -int(x["task"].get("priority", 1) or 1))
     today_wd = today().weekday()
@@ -922,8 +944,8 @@ def schedule_view():
 </style>
 
 <div class="mb-3 d-flex align-items-center gap-3 flex-wrap">
-  <h5 class="mb-0">&#128197; Harmonogram tygodniowy</h5>
-  <a href="/manage" class="btn btn-sm btn-primary ms-auto">&#65291; Dodaj zadanie</a>
+  <h5 class="mb-0">Harmonogram tygodniowy</h5>
+  <a href="/manage" class="btn btn-sm btn-primary ms-auto">Dodaj zadanie</a>
 </div>
 
 <div class="sched-grid">
@@ -931,37 +953,37 @@ def schedule_view():
   <div class="sched-col">
     <div class="sched-header {% if i == today_wd %}today{% endif %}">
       {{ day_full[i] }}
-      <span class="day-short">{% if i == today_wd %}DZI&#346;{% else %}{{ day_short[i] | upper }}{% endif %}</span>
+      <span class="day-short">{% if i == today_wd %}DZIS{% else %}{{ day_short[i] | upper }}{% endif %}</span>
       <span class="sched-count">{{ sched[i] | length }}</span>
     </div>
     <div class="sched-body {% if i == today_wd %}today{% endif %}">
       {% if sched[i] %}
         {% for item in sched[i] %}
-        <div class="sched-task p{{ item.task.priority }}">
+        <div class="sched-task p{{ item.task.priority }}" style="background-color: {{ item.room_color }}; border-left-color: {{ item.room_color }};opacity: 0.95;">
           <div class="t-name">{{ item.task.name }}</div>
-          <div class="t-room">&#127968; {{ item.room_name }}</div>
+          <div class="t-room">Pokoj: {{ item.room_name }}</div>
           <div class="t-meta">
             {% if item.task.priority == 3 %}
-              <span style="color:#dc3545; font-weight:600;">&#9679; Wysoki</span>
+              <span style="color:#dc3545; font-weight:600;">Wysoki</span>
             {% elif item.task.priority == 2 %}
-              <span style="color:#e09000; font-weight:600;">&#9679; &#346;redni</span>
+              <span style="color:#e09000; font-weight:600;">Sredni</span>
             {% else %}
-              <span style="color:#28a745; font-weight:600;">&#9679; Niski</span>
+              <span style="color:#28a745; font-weight:600;">Niski</span>
             {% endif %}
-            &bull;
+            |
             {% if item.task.last_done %}
-              <span>&#10003; {{ item.task.last_done }}</span>
+              <span>OK: {{ item.task.last_done }}</span>
             {% else %}
               <span style="color:#adb5bd;">jeszcze nie</span>
             {% endif %}
           </div>
           <form method="post" action="{{ url_for('mark_done', task_id=item.task.id) }}">
-            <button class="btn btn-outline-success t-done-btn">&#10003; Zrobione</button>
+            <button class="btn btn-outline-success t-done-btn">Zrobione</button>
           </form>
         </div>
         {% endfor %}
       {% else %}
-        <div class="sched-empty">&#10006;</div>
+        <div class="sched-empty">Brak</div>
       {% endif %}
     </div>
   </div>
@@ -969,8 +991,7 @@ def schedule_view():
 </div>
 
 <p class="small-muted mt-3 mb-0">
-  &#128161; Zadania bez przypisanego dnia nie s&#261; widoczne w harmonogramie &mdash;
-  edytuj je w <a href="/manage">Panelu</a>.
+  Zadania bez przypisanego dnia nie sa widoczne w harmonogramie - edytuj je w <a href="/manage">Panelu</a>.
 </p>
 """
     return render_page(body, sched=sched, today_wd=today_wd,
