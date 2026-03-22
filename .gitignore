@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Dane lokalne (nie commitujemy danych produkcyjnych)
+data.json
+
+# Logi i tymczasowe
+*.log
+test_err.txt
+test_out.txt
+git status
+
+# OS
+.DS_Store
+Thumbs.db

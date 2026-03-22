@@ -1,8 +1,9 @@
-﻿from flask import Flask, request, redirect, url_for, render_template_string
+﻿from flask import Flask, request, redirect, url_for, render_template_string, send_from_directory
 import os, json, uuid, datetime, calendar, webbrowser
 
-APP_PORT = 5000
-DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
+APP_PORT = int(os.environ.get("PORT", 5000))
+_data_dir = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+DATA_FILE = os.path.join(_data_dir, "data.json")
 
 app = Flask(__name__)
 
@@ -222,8 +223,19 @@ BASE = r"""<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>AgatClean</title>
+  <!-- PWA -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#1a73e8">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="AgatClean">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/icon-152.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="/static/icons/icon-512.png">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #f7faf9; }
@@ -246,7 +258,16 @@ BASE = r"""<!doctype html>
     .overdue-badge { font-size: .8rem; font-weight:600; color:#c0392b; }
     .small-muted { font-size:.82rem; color:#888; }
     .navbar { border-bottom: 1px solid #e8eee9; }
+    /* PWA safe area dla iPhone z notchem */
+    body { padding-bottom: env(safe-area-inset-bottom); }
   </style>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
@@ -1221,13 +1242,40 @@ def periodic_view():
     return render_page(body, tasks=periodic_tasks)
 
 
+# --- PWA ---
+
+@app.route('/sw.js')
+def service_worker():
+    return send_from_directory('static', 'sw.js',
+                               mimetype='application/javascript')
+
+
+def get_local_ip():
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
 # --- Run ---
 
 if __name__ == "__main__":
     load_data()
+    local_ip = get_local_ip()
     url = f"http://127.0.0.1:{APP_PORT}/"
+    print(f"\n{'='*50}")
+    print(f"  AgatClean uruchomiony!")
+    print(f"  Komputer:  http://127.0.0.1:{APP_PORT}/")
+    print(f"  Telefon:   http://{local_ip}:{APP_PORT}/")
+    print(f"  (oba urzadzenia musza byc w tej samej sieci Wi-Fi)")
+    print(f"{'='*50}\n")
     try:
         webbrowser.open(url)
     except Exception:
         pass
-    app.run(host="127.0.0.1", port=APP_PORT, debug=False)
+    app.run(host="0.0.0.0", port=APP_PORT, debug=False)
