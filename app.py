@@ -1,5 +1,5 @@
 ﻿from flask import Flask, request, redirect, url_for, render_template_string
-import os, json, uuid, datetime, webbrowser
+import os, json, uuid, datetime, calendar, webbrowser
 
 APP_PORT = 5000
 DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
@@ -41,6 +41,18 @@ def load_data():
                 _t["week_days"] = [int(_t["week_day"])]
                 del _t["week_day"]
             _t.setdefault("week_days", [])
+            # Migracja: freq_type / freq_value / freq_unit
+            if "freq_type" not in _t:
+                if _t.get("week_days"):
+                    _t["freq_type"] = "weekly"
+                elif _t.get("frequency"):
+                    _t["freq_type"] = "periodic"
+                    _t.setdefault("freq_value", int(_t["frequency"]))
+                    _t.setdefault("freq_unit", "days")
+                else:
+                    _t["freq_type"] = "weekly"
+            _t.setdefault("freq_value", 1)
+            _t.setdefault("freq_unit", "days")
     return data
 
 def default_data():
@@ -94,8 +106,13 @@ def ensure_corridor_task(data):
     t = {
         "id": str(uuid.uuid4()),
         "name": task_name,
-        "frequency": 7,
+        "freq_type": "periodic",
+        "week_days": [],
+        "freq_value": 7,
+        "freq_unit": "days",
+        "frequency": None,
         "priority": 2,
+        "one_time": False,
         "last_done": None,
         "created_at": iso(today_date)
     }
@@ -109,6 +126,8 @@ WEEK_DAYS_FULL  = [
     "Poniedzia\u0142ek", "Wtorek", "\u015aroda",
     "Czwartek", "Pi\u0105tek", "Sobota", "Niedziela"
 ]
+FREQ_UNIT_LABELS = {"days": "dni", "weeks": "tygodnie", "months": "miesi\u0105ce", "years": "lata"}
+FREQ_UNIT_SHORT  = {"days": "dni", "weeks": "tyg.", "months": "mies.", "years": "lat"}
 
 def week_days_str(week_day_names, week_days):
     """Konwertuje listę indeksów dni na string"""
@@ -121,6 +140,33 @@ def _most_recent_weekday(week_day):
     today_date = today()
     diff = (today_date.weekday() - week_day) % 7
     return today_date - datetime.timedelta(days=diff)
+
+
+def compute_next_periodic(last_done, freq_value, freq_unit):
+    """Oblicza następny termin wykonania zadania okresowego."""
+    if not last_done:
+        return today()
+    v = max(1, int(freq_value or 1))
+    if freq_unit == "days":
+        return last_done + datetime.timedelta(days=v)
+    elif freq_unit == "weeks":
+        return last_done + datetime.timedelta(weeks=v)
+    elif freq_unit == "months":
+        m_total = last_done.month - 1 + v
+        yr = last_done.year + m_total // 12
+        mo = m_total % 12 + 1
+        d  = min(last_done.day, calendar.monthrange(yr, mo)[1])
+        return datetime.date(yr, mo, d)
+    elif freq_unit == "years":
+        yr = last_done.year + v
+        d  = min(last_done.day, calendar.monthrange(yr, last_done.month)[1])
+        return datetime.date(yr, last_done.month, d)
+    return last_done + datetime.timedelta(days=v)
+
+
+def freq_label(freq_value, freq_unit):
+    v = int(freq_value or 1)
+    return f"Co {v} {FREQ_UNIT_SHORT.get(freq_unit, freq_unit)}"
 
 
 def _compute_due_weekly(t):
@@ -152,15 +198,20 @@ def _compute_due_weekly(t):
 
 
 def compute_due(t):
-    week_days = t.get("week_days", [])
-    if week_days:  # Ma przypisane dni tygodnia
-        return _compute_due_weekly(t)
-    freq = int(t.get("frequency", 0) or 0)
+    if t.get("one_time"):
+        return True, 0, today()
+    freq_type = t.get("freq_type", "weekly" if t.get("week_days") else "periodic")
+    if freq_type == "weekly":
+        if t.get("week_days"):
+            return _compute_due_weekly(t)
+        return False, 0, today() + datetime.timedelta(days=7)
+    # periodic
     last = parse_iso(t.get("last_done"))
-    # If never done → show immediately as due today
     if not last:
         return True, 0, today()
-    next_due = last + datetime.timedelta(days=freq)
+    freq_value = t.get("freq_value") or t.get("frequency") or 7
+    freq_unit  = t.get("freq_unit", "days")
+    next_due   = compute_next_periodic(last, freq_value, freq_unit)
     overdue_days = (today() - next_due).days
     return (next_due <= today()), max(0, overdue_days), next_due
 
@@ -215,6 +266,7 @@ BASE = r"""<!doctype html>
     <div class="ms-auto d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-primary btn-sm" href="/manage">Panel</a>
       <a class="btn btn-outline-success btn-sm" href="/schedule">Harmonogram</a>
+      <a class="btn btn-outline-info btn-sm" href="/periodic">Okresowe</a>
       <a class="btn btn-outline-warning btn-sm" href="/quick">Malo czasu</a>
       <a class="btn btn-outline-secondary btn-sm" href="/settings">Ustawienia</a>
     </div>
@@ -270,8 +322,8 @@ def index():
               <div class="small-muted mt-1">
                 Pokoj: <strong>{{ item.room_name }}</strong>
                 {% if not item.task.one_time %}
-                  {% if item.task.week_days %}{{ week_days_str(week_day_names, item.task.week_days) }}{% elif item.task.frequency %}Co {{ item.task.frequency }} dni{% endif %}
-                  Ostatnio: {{ item.task.last_done or "-" }}
+                  | {% if item.task.freq_type == 'weekly' %}{{ week_days_str(week_day_names, item.task.week_days) }}{% elif item.task.freq_type == 'periodic' %}Co {{ item.task.freq_value }} {{ freq_unit_labels.get(item.task.freq_unit, '') }}{% endif %}
+                  | Ostatnio: {{ item.task.last_done or "-" }}
                 {% endif %}
               </div>
             </div>
@@ -310,7 +362,8 @@ def index():
 </div>
 """
     return render_page(body, tasks=tasks_today, rooms=data["rooms"],
-                       week_day_names=WEEK_DAYS_SHORT, week_days_str=week_days_str)
+                       week_day_names=WEEK_DAYS_SHORT, week_days_str=week_days_str,
+                       freq_unit_labels=FREQ_UNIT_LABELS)
 
 
 @app.route("/done/<task_id>", methods=["POST"])
@@ -369,16 +422,41 @@ def manage():
         </div>
         <div id="freqRow">
           <div class="mb-2">
-            <label class="form-label small-muted">Dni tygodnia</label>
-            <div class="d-flex flex-wrap gap-2">
-              {% for wd_i, wd_n in week_day_options %}
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="week_days" value="{{ wd_i }}" id="wd_{{ wd_i }}">
-                <label class="form-check-label" for="wd_{{ wd_i }}">{{ wd_n }}</label>
-              </div>
-              {% endfor %}
+            <label class="form-label small-muted fw-semibold">Typ częstotliwości</label>
+            <div class="btn-group w-100" role="group">
+              <input type="radio" class="btn-check" name="freq_type" value="weekly" id="ft_weekly_new" checked>
+              <label class="btn btn-outline-secondary btn-sm" for="ft_weekly_new">Dzień tygodnia</label>
+              <input type="radio" class="btn-check" name="freq_type" value="periodic" id="ft_periodic_new">
+              <label class="btn btn-outline-secondary btn-sm" for="ft_periodic_new">Okresowa</label>
             </div>
-            <div class="small-muted mt-1">Zaznacz dni, w które zadanie powinno być wykonane</div>
+          </div>
+          <div id="weeklySection_new">
+            <div class="mb-2">
+              <label class="form-label small-muted">Dni tygodnia</label>
+              <div class="d-flex flex-wrap gap-2">
+                {% for wd_i, wd_n in week_day_options %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="week_days" value="{{ wd_i }}" id="wd_{{ wd_i }}">
+                  <label class="form-check-label" for="wd_{{ wd_i }}">{{ wd_n }}</label>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="small-muted mt-1">Zaznacz dni, w które zadanie powinno być wykonane</div>
+            </div>
+          </div>
+          <div id="periodicSection_new" style="display:none;">
+            <div class="mb-2">
+              <label class="form-label small-muted">Powtarzaj co</label>
+              <div class="input-group">
+                <input type="number" name="freq_value" class="form-control" min="1" value="1" placeholder="np. 2">
+                <select name="freq_unit" class="form-select">
+                  <option value="days">dni</option>
+                  <option value="weeks">tygodnie</option>
+                  <option value="months">miesiące</option>
+                  <option value="years">lata</option>
+                </select>
+              </div>
+            </div>
           </div>
           <div class="mb-2">
             <label class="form-label small-muted">Priorytet</label>
@@ -427,8 +505,8 @@ def manage():
                   </div>
                   <div class="small-muted mt-1">
                     {% if not t.one_time %}
-                      {% if t.week_days %}{{ week_days_str(week_day_names, t.week_days) }}{% elif t.frequency %}Co {{ t.frequency }} dni{% endif %}
-                      Ostatnio: {{ t.last_done or "-" }}
+                      {% if t.freq_type == 'weekly' %}{{ week_days_str(week_day_names, t.week_days) }}{% elif t.freq_type == 'periodic' %}Co {{ t.freq_value }} {{ freq_unit_labels.get(t.freq_unit, '') }}{% endif %}
+                      | Ostatnio: {{ t.last_done or "-" }}
                     {% endif %}
                     <span class="badge {% if t.priority==3 %}bg-danger{% elif t.priority==2 %}bg-warning text-dark{% else %}bg-success{% endif %}">
                       P{{ t.priority }}
@@ -438,12 +516,24 @@ def manage():
                 <div class="ms-3 d-flex gap-1 align-items-center flex-shrink-0">
                   <form method="post" action="{{ url_for('edit_task', task_id=t.id) }}" class="d-flex gap-1 align-items-center m-0">
                     {% if not t.one_time %}
-                    <div class="btn-group" role="group" style="flex-wrap: wrap;">
-                      {% for wd_i, wd_n in week_day_options %}
-                      <input type="checkbox" class="btn-check" name="week_days" value="{{ wd_i }}" id="ed_{{ t.id }}_{{ wd_i }}" {% if wd_i|int in t.week_days %}checked{% endif %}>
-                      <label class="btn btn-outline-secondary btn-sm" for="ed_{{ t.id }}_{{ wd_i }}" style="padding:2px 6px; font-size:0.75rem;">{{ wd_n }}</label>
-                      {% endfor %}
-                    </div>
+                      {% if t.freq_type == 'periodic' %}
+                      <input type="number" name="freq_value" value="{{ t.freq_value or 1 }}" min="1" class="form-control form-control-sm" style="width:55px;" title="Powtarzaj co">
+                      <select name="freq_unit" class="form-select form-select-sm" style="width:85px">
+                        <option value="days" {% if t.freq_unit == 'days' %}selected{% endif %}>dni</option>
+                        <option value="weeks" {% if t.freq_unit == 'weeks' %}selected{% endif %}>tyg.</option>
+                        <option value="months" {% if t.freq_unit == 'months' %}selected{% endif %}>mies.</option>
+                        <option value="years" {% if t.freq_unit == 'years' %}selected{% endif %}>lat</option>
+                      </select>
+                      <input type="hidden" name="freq_type" value="periodic">
+                      {% else %}
+                      <div class="btn-group" role="group" style="flex-wrap: wrap;">
+                        {% for wd_i, wd_n in week_day_options %}
+                        <input type="checkbox" class="btn-check" name="week_days" value="{{ wd_i }}" id="ed_{{ t.id }}_{{ wd_i }}" {% if wd_i|int in t.week_days %}checked{% endif %}>
+                        <label class="btn btn-outline-secondary btn-sm" for="ed_{{ t.id }}_{{ wd_i }}" style="padding:2px 6px; font-size:0.75rem;">{{ wd_n }}</label>
+                        {% endfor %}
+                      </div>
+                      <input type="hidden" name="freq_type" value="weekly">
+                      {% endif %}
                     {% endif %}
                     <select name="priority" class="form-select form-select-sm" style="width:63px">
                       <option {% if t.priority==3 %}selected{% endif %} value="3">3</option>
@@ -481,6 +571,16 @@ document.addEventListener('DOMContentLoaded', function() {
       freqRow.style.display = this.checked ? 'none' : '';
     });
   }
+  // Toggle weekly / periodic sections
+  document.querySelectorAll('input[name="freq_type"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      var isWeekly = this.value === 'weekly';
+      var ws = document.getElementById('weeklySection_new');
+      var ps = document.getElementById('periodicSection_new');
+      if (ws) ws.style.display = isWeekly ? '' : 'none';
+      if (ps) ps.style.display = isWeekly ? 'none' : '';
+    });
+  });
 
   // ===== DRAG & DROP TASKS =====
   let draggedTask = null;
@@ -583,7 +683,8 @@ document.addEventListener('DOMContentLoaded', function() {
     return render_page(body, rooms=data["rooms"],
                        week_day_names=wd_names,
                        week_days_str=week_days_str,
-                       week_day_options=list(enumerate(wd_names)))
+                       week_day_options=list(enumerate(wd_names)),
+                       freq_unit_labels=FREQ_UNIT_LABELS)
 
 
 @app.route("/add_room", methods=["POST"])
@@ -604,14 +705,27 @@ def add_task():
     name = (request.form.get("name") or "").strip()
     room_id = request.form.get("room_id", "")
     one_time = request.form.get("one_time") == "1"
+    freq_type = request.form.get("freq_type", "weekly") if not one_time else "weekly"
+    if freq_type not in ("weekly", "periodic"):
+        freq_type = "weekly"
     week_days = []
+    freq_value = 1
+    freq_unit = "days"
     if not one_time:
-        # Zbierz wszystkie zaznaczone dni
-        week_days_raw = request.form.getlist("week_days")
-        try:
-            week_days = sorted(set(max(0, min(6, int(d))) for d in week_days_raw if d))
-        except (ValueError, TypeError):
-            week_days = []
+        if freq_type == "weekly":
+            week_days_raw = request.form.getlist("week_days")
+            try:
+                week_days = sorted(set(max(0, min(6, int(d))) for d in week_days_raw if d))
+            except (ValueError, TypeError):
+                week_days = []
+        elif freq_type == "periodic":
+            try:
+                freq_value = max(1, int(request.form.get("freq_value") or 1))
+            except (ValueError, TypeError):
+                freq_value = 1
+            freq_unit = request.form.get("freq_unit", "days")
+            if freq_unit not in ("days", "weeks", "months", "years"):
+                freq_unit = "days"
     try:
         pr = int(request.form.get("priority") or 2)
     except ValueError:
@@ -623,7 +737,10 @@ def add_task():
     task = {
         "id": str(uuid.uuid4()),
         "name": name,
+        "freq_type": freq_type,
         "week_days": week_days,
+        "freq_value": freq_value,
+        "freq_unit": freq_unit,
         "frequency": None,
         "priority": pr,
         "one_time": one_time,
@@ -642,12 +759,25 @@ def edit_task(task_id):
     if task:
         try:
             if not task.get("one_time"):
-                # Zbierz zaznaczone dni
-                week_days_raw = request.form.getlist("week_days")
-                try:
-                    task["week_days"] = sorted(set(max(0, min(6, int(d))) for d in week_days_raw if d))
-                except (ValueError, TypeError):
-                    task["week_days"] = []
+                freq_type = request.form.get("freq_type", task.get("freq_type", "weekly"))
+                if freq_type not in ("weekly", "periodic"):
+                    freq_type = "weekly"
+                task["freq_type"] = freq_type
+                if freq_type == "weekly":
+                    week_days_raw = request.form.getlist("week_days")
+                    try:
+                        task["week_days"] = sorted(set(max(0, min(6, int(d))) for d in week_days_raw if d))
+                    except (ValueError, TypeError):
+                        task["week_days"] = []
+                elif freq_type == "periodic":
+                    try:
+                        task["freq_value"] = max(1, int(request.form.get("freq_value") or 1))
+                    except (ValueError, TypeError):
+                        task["freq_value"] = 1
+                    freq_unit = request.form.get("freq_unit", "days")
+                    if freq_unit not in ("days", "weeks", "months", "years"):
+                        freq_unit = "days"
+                    task["freq_unit"] = freq_unit
                 task["frequency"] = None
             task["priority"] = max(1, min(3, int(request.form.get("priority") or task.get("priority", 2))))
             save_data(data)
@@ -991,12 +1121,104 @@ def schedule_view():
 </div>
 
 <p class="small-muted mt-3 mb-0">
-  Zadania bez przypisanego dnia nie sa widoczne w harmonogramie - edytuj je w <a href="/manage">Panelu</a>.
+  Harmonogram pokazuje tylko zadania tygodniowe (przypisane do dni tygodnia).
+  Zadania z własną częstotliwością (co X dni/tygodni/miesięcy) znajdziesz w <a href="/periodic">widoku Okresowe</a>.
 </p>
 """
     return render_page(body, sched=sched, today_wd=today_wd,
                        day_full=WEEK_DAYS_FULL, day_short=WEEK_DAYS_SHORT,
                        week_days_str=week_days_str)
+
+
+@app.route("/periodic")
+def periodic_view():
+    data = load_data()
+    today_d = today()
+    periodic_tasks = []
+    for room in data["rooms"]:
+        for t in room.get("tasks", []):
+            if t.get("one_time"):
+                continue
+            freq_type = t.get("freq_type", "weekly" if t.get("week_days") else "periodic")
+            if freq_type != "periodic":
+                continue
+            last = parse_iso(t.get("last_done"))
+            fv = t.get("freq_value") or t.get("frequency") or 7
+            fu = t.get("freq_unit", "days")
+            next_due = compute_next_periodic(last, fv, fu) if last else today_d
+            is_due = next_due <= today_d
+            overdue_days = max(0, (today_d - next_due).days)
+            days_until = (next_due - today_d).days
+            periodic_tasks.append({
+                "room_name": room["name"],
+                "room_color": room.get("color", "#f5f5f5"),
+                "task": t,
+                "next_due": iso(next_due),
+                "is_due": is_due,
+                "overdue_days": overdue_days,
+                "days_until": days_until,
+                "flabel": freq_label(fv, fu),
+            })
+    # Przeterminowane na górze, potem wg daty
+    periodic_tasks.sort(key=lambda x: (not x["is_due"], x["next_due"]))
+
+    body = """
+<div class="mb-3 d-flex align-items-center gap-3 flex-wrap">
+  <h5 class="mb-0">Zadania okresowe</h5>
+  <span class="small-muted">— obliczane na podstawie daty ostatniego wykonania</span>
+  <a href="/manage" class="btn btn-sm btn-primary ms-auto">+ Dodaj zadanie</a>
+</div>
+{% if tasks %}
+<div class="row g-3">
+  {% for item in tasks %}
+  {% set p = item.task.priority | int %}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100" style="border-left:4px solid {{ item.room_color }}; border-radius:12px;">
+      <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div style="flex:1; min-width:0;">
+            <div class="fw-bold" style="font-size:1rem; word-break:break-word;">{{ item.task.name }}</div>
+            <div class="small-muted">{{ item.room_name }}</div>
+            <div class="mt-1 d-flex gap-1 flex-wrap">
+              <span class="badge bg-light text-dark border" style="font-size:.78rem;">{{ item.flabel }}</span>
+              <span class="badge {% if p==3 %}bg-danger{% elif p==2 %}bg-warning text-dark{% else %}bg-success{% endif %}">P{{ p }}</span>
+            </div>
+            <div class="mt-2" style="font-size:.85rem;">
+              <span class="text-muted">Ostatnio:</span>
+              <strong>{{ item.task.last_done or "nigdy" }}</strong>
+            </div>
+            <div class="mt-1" style="font-size:.85rem;">
+              <span class="text-muted">Następny termin:</span>
+              {% if item.is_due %}
+                {% if item.overdue_days > 0 %}
+                  <span class="text-danger fw-bold">{{ item.next_due }} <small>(zaległy o {{ item.overdue_days }} d)</small></span>
+                {% else %}
+                  <span class="text-warning fw-bold">{{ item.next_due }} <small>(dziś!)</small></span>
+                {% endif %}
+              {% else %}
+                <span class="text-success">{{ item.next_due }} <small>(za {{ item.days_until }} d)</small></span>
+              {% endif %}
+            </div>
+          </div>
+          <form method="post" action="{{ url_for('mark_done', task_id=item.task.id) }}" class="flex-shrink-0">
+            <button class="btn btn-{% if item.is_due %}success{% else %}outline-success{% endif %} btn-sm">Zrobione</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card p-4 text-center">
+  <div class="text-muted">
+    Brak zadań okresowych.<br>
+    Dodaj zadanie w <a href="/manage">Panelu</a> i wybierz typ <strong>Okresowa</strong>.
+  </div>
+</div>
+{% endif %}
+"""
+    return render_page(body, tasks=periodic_tasks)
 
 
 # --- Run ---
