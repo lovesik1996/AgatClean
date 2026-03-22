@@ -3,45 +3,19 @@
     {
       "id": "92d1eaa0-3108-4839-b69c-6a45c2d9b780",
       "name": "Łazienka",
-      "color": "#e8f4fb",
+      "color": "#098cd7",
       "tasks": [
         {
-          "id": "per-laz-001",
-          "name": "Czyszczenie fugów",
-          "freq_type": "periodic",
+          "id": "80d2c932-aede-46e7-a4dc-33b1b15070c5",
+          "name": "Powiesić pranie",
+          "freq_type": "weekly",
           "week_days": [],
           "freq_value": 1,
-          "freq_unit": "months",
-          "frequency": null,
-          "priority": 2,
-          "one_time": false,
-          "last_done": "2026-03-22",
-          "created_at": "2026-03-22"
-        },
-        {
-          "id": "per-laz-002",
-          "name": "Odkamienianie prysznica",
-          "freq_type": "periodic",
-          "week_days": [],
-          "freq_value": 2,
-          "freq_unit": "weeks",
-          "frequency": null,
-          "priority": 1,
-          "one_time": false,
-          "last_done": "2026-03-10",
-          "created_at": "2026-03-22"
-        },
-        {
-          "id": "per-laz-003",
-          "name": "Mycie armatury",
-          "freq_type": "periodic",
-          "week_days": [],
-          "freq_value": 10,
           "freq_unit": "days",
           "frequency": null,
-          "priority": 1,
-          "one_time": false,
-          "last_done": "2026-03-22",
+          "priority": 2,
+          "one_time": true,
+          "last_done": null,
           "created_at": "2026-03-22"
         }
       ]
@@ -49,119 +23,13 @@
     {
       "id": "e1b8f9c7-f9da-4e90-8cb2-6898c8c539c2",
       "name": "Kuchnia",
-      "tasks": [
-        {
-          "id": "bc8d1f9f-3194-40df-a9c2-0108dc106ed9",
-          "name": "Przetrzeć szafki",
-          "freq_type": "weekly",
-          "week_days": [
-            0
-          ],
-          "freq_value": 1,
-          "freq_unit": "days",
-          "frequency": null,
-          "priority": 1,
-          "one_time": false,
-          "last_done": null,
-          "created_at": "2026-03-21"
-        },
-        {
-          "id": "f224ab10-2766-4482-982e-432624379b35",
-          "name": "Zmywarka",
-          "freq_type": "weekly",
-          "week_days": [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6
-          ],
-          "freq_value": 1,
-          "freq_unit": "days",
-          "frequency": null,
-          "priority": 3,
-          "one_time": false,
-          "last_done": "2026-03-22",
-          "created_at": "2026-03-21"
-        },
-        {
-          "id": "per-kuc-001",
-          "name": "Czyszczenie lodówki",
-          "freq_type": "periodic",
-          "week_days": [],
-          "freq_value": 1,
-          "freq_unit": "months",
-          "frequency": null,
-          "priority": 2,
-          "one_time": false,
-          "last_done": "2026-02-28",
-          "created_at": "2026-03-22"
-        },
-        {
-          "id": "per-kuc-002",
-          "name": "Odtłuszczenie piekarnika",
-          "freq_type": "periodic",
-          "week_days": [],
-          "freq_value": 3,
-          "freq_unit": "months",
-          "frequency": null,
-          "priority": 1,
-          "one_time": false,
-          "last_done": "2026-03-22",
-          "created_at": "2026-03-22"
-        }
-      ],
+      "tasks": [],
       "color": "#f5f5f5"
     },
     {
       "id": "a4f00c7d-ec30-4a79-a00c-5c498e0a095b",
       "name": "Sypialnia",
-      "tasks": [
-        {
-          "id": "fee3990c-5442-4a0c-9cdf-a7f534c92744",
-          "name": "Odkurzyć",
-          "freq_type": "weekly",
-          "week_days": [
-            0,
-            4
-          ],
-          "freq_value": 1,
-          "freq_unit": "days",
-          "frequency": null,
-          "priority": 3,
-          "one_time": false,
-          "last_done": "2026-03-22",
-          "created_at": "2026-03-21"
-        },
-        {
-          "id": "per-syp-001",
-          "name": "Zmiana pościeli",
-          "freq_type": "periodic",
-          "week_days": [],
-          "freq_value": 2,
-          "freq_unit": "weeks",
-          "frequency": null,
-          "priority": 2,
-          "one_time": false,
-          "last_done": "2026-03-22",
-          "created_at": "2026-03-22"
-        },
-        {
-          "id": "per-syp-002",
-          "name": "Pranie firan",
-          "freq_type": "periodic",
-          "week_days": [],
-          "freq_value": 1,
-          "freq_unit": "years",
-          "frequency": null,
-          "priority": 1,
-          "one_time": false,
-          "last_done": "2025-04-10",
-          "created_at": "2026-03-22"
-        }
-      ],
+      "tasks": [],
       "color": "#f5f5f5"
     }
   ],
