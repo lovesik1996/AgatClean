@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AgatClean – źródłowa ikona aplikacji dla @capacitor/assets
+  
+  Wymagania:
+  - icon.png    : 1024x1024 px, bez zaokrągleń (Capacitor sam zaokrągla dla Androida/iOS)
+  - splash.png  : 2732x2732 px, grafika na środku (splash screen)
+  
+  Pliki źródłowe umieść w: assets/icon.png i assets/splash.png
+  Potem uruchom: npm run icons
+-->

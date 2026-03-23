@@ -1,7 +1,7 @@
-﻿from flask import Flask, request, redirect, url_for, render_template_string, send_from_directory, session
+﻿from flask import Flask, request, redirect, url_for, render_template_string, send_from_directory, session, jsonify
 import os, json, uuid, datetime, calendar, webbrowser, functools
 import requests as http_req
-from firebase_config import SECRET_KEY, FIREBASE_WEB_API_KEY
+from firebase_config import SECRET_KEY, FIREBASE_WEB_API_KEY, FIREBASE_CLIENT_CONFIG, get_firestore
 
 APP_PORT = int(os.environ.get("PORT", 5000))
 _data_dir = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
@@ -22,30 +22,21 @@ def iso(d):
 def parse_iso(s):
     return datetime.date.fromisoformat(s) if s else None
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        data = default_data()
-        save_data(data)
-        return data
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+def _migrate_data(data):
+    """Uzupełnia brakujące pola i wykonuje migracje schematu."""
     data.setdefault("settings", {})
     data["settings"].setdefault("corridor_parity", "even")
     data["settings"].setdefault("corridor_task_name", "Sprzatanie korytarza")
     data["settings"].setdefault("quick_count", 2)
     data.setdefault("meta", {})
     data["meta"].setdefault("last_corridor_added", "")
-    # Migracja: konwersja week_day (liczba) na week_days (lista)
     for _r in data.get("rooms", []):
-        # Migracja: dodaj kolor pokoju jeśli go brak
         _r.setdefault("color", "#f5f5f5")
         for _t in _r.get("tasks", []):
             if "week_day" in _t and _t["week_day"] is not None and "week_days" not in _t:
-                # Stara struktura: skonwertuj na nową
                 _t["week_days"] = [int(_t["week_day"])]
                 del _t["week_day"]
             _t.setdefault("week_days", [])
-            # Migracja: freq_type / freq_value / freq_unit
             if "freq_type" not in _t:
                 if _t.get("week_days"):
                     _t["freq_type"] = "weekly"
@@ -59,6 +50,41 @@ def load_data():
             _t.setdefault("freq_unit", "days")
     return data
 
+def _get_uid():
+    """Zwraca uid zalogowanego użytkownika z sesji (lub None)."""
+    return session.get("uid")
+
+def load_data():
+    uid = _get_uid()
+    if uid:
+        db = get_firestore()
+        if db:
+            try:
+                doc = db.collection("users").document(uid).collection("appdata").document("main").get()
+                if doc.exists:
+                    return _migrate_data(doc.to_dict())
+                # Pierwsza wizyta – zainicjuj z data.json jeśli istnieje
+                if os.path.exists(DATA_FILE):
+                    with open(DATA_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    data = _migrate_data(data)
+                    save_data(data)  # zapisz też do Firestore
+                    return data
+                data = default_data()
+                save_data(data)
+                return data
+            except Exception as exc:
+                print(f"[Firestore] load_data error: {exc}")
+
+    # Fallback – plik lokalny
+    if not os.path.exists(DATA_FILE):
+        data = default_data()
+        save_data(data)
+        return data
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return _migrate_data(data)
+
 def default_data():
     return {
         "rooms": [],
@@ -71,6 +97,16 @@ def default_data():
     }
 
 def save_data(data):
+    uid = _get_uid()
+    if uid:
+        db = get_firestore()
+        if db:
+            try:
+                db.collection("users").document(uid).collection("appdata").document("main").set(data)
+                return
+            except Exception as exc:
+                print(f"[Firestore] save_data error: {exc}")
+    # Fallback – plik lokalny
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -424,6 +460,50 @@ BASE = r"""<!doctype html>
       });
     }
   </script>
+  <!-- Firebase JS SDK – Firestore offline persistence -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+    import {
+      initializeFirestore,
+      persistentLocalCache,
+      persistentMultipleTabManager,
+      onSnapshot,
+      collection,
+      doc
+    } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+    async function initFirestoreSync() {
+      try {
+        const resp = await fetch('/api/firebase-config');
+        if (!resp.ok) return;
+        const cfg = await resp.json();
+        if (!cfg.apiKey || !cfg.uid) return;
+
+        const fbApp = initializeApp(cfg, 'agatclean-client');
+
+        // Firestore z lokalnym cache – działa offline
+        const db = initializeFirestore(fbApp, {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager()
+          })
+        });
+
+        // Nasłuchuj zmian danych użytkownika w czasie rzeczywistym
+        const dataRef = doc(db, 'users', cfg.uid, 'appdata', 'main');
+        onSnapshot(dataRef, (snap) => {
+          if (snap.exists()) {
+            // Oznacz powiadomienie o nowych danych – strona odświeży się przy następnej akcji
+            window._firestoreDataVersion = (window._firestoreDataVersion || 0) + 1;
+          }
+        }, () => { /* ignoruj błędy offline */ });
+
+        window._firestoreDb = db;
+        window._firestoreUid = cfg.uid;
+      } catch (e) { /* Firebase niedostępny – app działa normalnie */ }
+    }
+
+    initFirestoreSync();
+  </script>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
@@ -473,13 +553,50 @@ def login():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip()
         password = request.form.get("password", "")
-        _, err = firebase_sign_in(email, password)
+        fb_data, err = firebase_sign_in(email, password)
         if err is None:
             session["logged_in"] = True
             session["email"] = email
+            # Zapisz uid – potrzebny do Firestore per-user storage
+            session["uid"] = fb_data.get("localId", "")
             return redirect(url_for("index"))
         error = err
     return render_template_string(LOGIN_PAGE, error=error, email=email)
+
+
+# ─── REST API – Firestore sync endpoint (używany przez klienta mobilnego) ───
+
+@app.route("/api/data", methods=["GET"])
+def api_get_data():
+    """Zwraca bieżące dane użytkownika jako JSON."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    data = load_data()
+    return jsonify(data)
+
+
+@app.route("/api/data", methods=["POST"])
+def api_post_data():
+    """Przyjmuje kompletny JSON danych i zapisuje je (sync z klienta)."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    payload = request.get_json(silent=True)
+    if not payload or "rooms" not in payload:
+        return jsonify({"error": "Invalid payload"}), 400
+    save_data(payload)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/firebase-config")
+def api_firebase_config():
+    """Udostępnia konfigurację Firebase JS SDK dla klienta mobilnego."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    return jsonify({
+        **FIREBASE_CLIENT_CONFIG,
+        "uid": session.get("uid", ""),
+        "email": session.get("email", "")
+    })
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -1482,7 +1599,6 @@ def get_local_ip():
 # --- Run ---
 
 if __name__ == "__main__":
-    load_data()
     local_ip = get_local_ip()
     url = f"http://127.0.0.1:{APP_PORT}/"
     print(f"\n{'='*50}")
