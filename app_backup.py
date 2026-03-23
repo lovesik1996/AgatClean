@@ -1,14 +1,10 @@
-﻿from flask import Flask, request, redirect, url_for, render_template_string, send_from_directory, session
-import os, json, uuid, datetime, calendar, webbrowser, functools
-import requests as http_req
-from firebase_config import SECRET_KEY, FIREBASE_WEB_API_KEY
+﻿from flask import Flask, request, redirect, url_for, render_template_string
+import os, json, uuid, datetime, calendar, webbrowser
 
-APP_PORT = int(os.environ.get("PORT", 5000))
-_data_dir = os.environ.get("DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
-DATA_FILE = os.path.join(_data_dir, "data.json")
+APP_PORT = 5000
+DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")
 
 app = Flask(__name__)
-app.secret_key = SECRET_KEY
 
 
 # --- Helpers ---
@@ -220,187 +216,23 @@ def compute_due(t):
     return (next_due <= today()), max(0, overdue_days), next_due
 
 
-# --- Auth ---
-
-_FB_ERRORS_PL = {
-    "EMAIL_NOT_FOUND":     "Nie znaleziono konta z tym adresem e-mail.",
-    "INVALID_PASSWORD":    "Nieprawidłowe hasło.",
-    "INVALID_EMAIL":       "Nieprawidłowy adres e-mail.",
-    "USER_DISABLED":       "To konto zostało wyłączone.",
-    "EMAIL_EXISTS":        "Konto z tym adresem już istnieje. Zaloguj się.",
-    "WEAK_PASSWORD":       "Hasło jest zbyt słabe (min. 6 znaków).",
-    "OPERATION_NOT_ALLOWED": "Logowanie e-mail/hasło nie jest włączone w Firebase.",
-    "TOO_MANY_ATTEMPTS_TRY_LATER": "Zbyt wiele prób. Spróbuj ponownie później.",
-    "INVALID_LOGIN_CREDENTIALS": "Nieprawidłowy adres e-mail lub hasło.",
-}
-
-def _fb_error(resp_json):
-    code = resp_json.get("error", {}).get("message", "UNKNOWN")
-    # Firebase may return e.g. "WEAK_PASSWORD : Password should be at least 6 characters"
-    code_key = code.split(" :")[0].strip()
-    return _FB_ERRORS_PL.get(code_key, f"Błąd Firebase: {code}")
-
-def firebase_sign_in(email, password):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_WEB_API_KEY}"
-    try:
-        r = http_req.post(url, json={"email": email, "password": password, "returnSecureToken": True}, timeout=10)
-        data = r.json()
-    except Exception:
-        return None, "Błąd połączenia z Firebase."
-    if "idToken" in data:
-        return data, None
-    return None, _fb_error(data)
-
-def firebase_sign_up(email, password):
-    url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={FIREBASE_WEB_API_KEY}"
-    try:
-        r = http_req.post(url, json={"email": email, "password": password, "returnSecureToken": True}, timeout=10)
-        data = r.json()
-    except Exception:
-        return None, "Błąd połączenia z Firebase."
-    if "idToken" in data:
-        return data, None
-    return None, _fb_error(data)
-
-
-_AUTH_STYLE = """
-<style>
-  body { background:#f7faf9; display:flex; align-items:center; justify-content:center; min-height:100vh; }
-  .auth-card { width:100%; max-width:380px; padding:2rem; }
-  .brand-icon { display:block; margin:0 auto 1rem; }
-</style>
-"""
-
-_AUTH_BRAND = """
-<svg class="brand-icon" width="52" height="52" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="12" fill="#1a73e8"/>
-  <rect x="14" y="18" width="36" height="7" rx="3" fill="white"/>
-  <rect x="14" y="31" width="28" height="7" rx="3" fill="white"/>
-  <rect x="14" y="44" width="20" height="7" rx="3" fill="white"/>
-</svg>
-"""
-
-LOGIN_PAGE = """<!doctype html>
-<html lang="pl">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgatClean – Logowanie</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  """ + _AUTH_STYLE + """
-</head>
-<body>
-<div class="card shadow auth-card">
-  <div class="card-body text-center">
-    """ + _AUTH_BRAND + """
-    <h4 class="fw-bold mb-0">AgatClean</h4>
-    <div class="text-muted small mb-4">Planer sprzątania domu</div>
-    {% if error %}
-      <div class="alert alert-danger py-2 text-start">{{ error }}</div>
-    {% endif %}
-    <form method="post" class="text-start">
-      <div class="mb-3">
-        <label class="form-label fw-semibold">E-mail</label>
-        <input type="email" name="email" class="form-control" value="{{ email or '' }}" autofocus required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label fw-semibold">Hasło</label>
-        <input type="password" name="password" class="form-control" required>
-      </div>
-      <button type="submit" class="btn btn-primary w-100">Zaloguj się</button>
-    </form>
-    <hr class="my-3">
-    <div class="small text-muted">Nie masz konta?
-      <a href="/register">Utwórz konto</a>
-    </div>
-  </div>
-</div>
-</body>
-</html>"""
-
-REGISTER_PAGE = """<!doctype html>
-<html lang="pl">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AgatClean – Utwórz konto</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  """ + _AUTH_STYLE + """
-</head>
-<body>
-<div class="card shadow auth-card">
-  <div class="card-body text-center">
-    """ + _AUTH_BRAND + """
-    <h4 class="fw-bold mb-0">Utwórz konto</h4>
-    <div class="text-muted small mb-4">AgatClean · Firebase Auth</div>
-    {% if error %}
-      <div class="alert alert-danger py-2 text-start">{{ error }}</div>
-    {% endif %}
-    {% if success %}
-      <div class="alert alert-success py-2 text-start">{{ success }}</div>
-    {% endif %}
-    <form method="post" class="text-start">
-      <div class="mb-3">
-        <label class="form-label fw-semibold">E-mail</label>
-        <input type="email" name="email" class="form-control" value="{{ email or '' }}" autofocus required>
-      </div>
-      <div class="mb-3">
-        <label class="form-label fw-semibold">Hasło (min. 6 znaków)</label>
-        <input type="password" name="password" class="form-control" required minlength="6">
-      </div>
-      <div class="mb-3">
-        <label class="form-label fw-semibold">Powtórz hasło</label>
-        <input type="password" name="confirm" class="form-control" required minlength="6">
-      </div>
-      <button type="submit" class="btn btn-success w-100">Utwórz konto</button>
-    </form>
-    <hr class="my-3">
-    <div class="small text-muted">Masz już konto?
-      <a href="/login">Zaloguj się</a>
-    </div>
-  </div>
-</div>
-</body>
-</html>"""
-
-
-def login_required(f):
-    @functools.wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get("logged_in"):
-            return redirect(url_for("login"))
-        return f(*args, **kwargs)
-    return decorated
-
-
 # --- Template ---
 
 BASE = r"""<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgatClean</title>
-  <!-- PWA -->
-  <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#1a73e8">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="AgatClean">
-  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/icon-152.png">
-  <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192.png">
-  <link rel="apple-touch-icon" sizes="512x512" href="/static/icons/icon-512.png">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #f7faf9; }
     .logo-wrap { display:flex; align-items:center; gap:.55rem; }
     .app-name { font-weight:700; font-size:1.2rem; line-height:1.1; }
     .app-sub  { font-size:.78rem; color:#777; }
-    .priority-3 { background: #ffd6d6 !important; }
-    .priority-2 { background: #fff8d0 !important; }
-    .priority-1 { background: #e6f7ee !important; }
+    .badge-p3 { background-color: rgba(220, 53, 69, 0.12); color: #b02030; border: 1px solid rgba(220, 53, 69, 0.22); }
+    .badge-p2 { background-color: rgba(255, 193, 7, 0.18); color: #7a5c00; border: 1px solid rgba(255, 193, 7, 0.35); }
+    .badge-p1 { background-color: rgba(40, 167, 69, 0.12); color: #155e30; border: 1px solid rgba(40, 167, 69, 0.22); }
     .card { border-radius: 14px; border: 1px solid #e3eae5; }
     .task-card { border-radius: 10px; padding: .8rem 1rem; margin-bottom: .6rem; border: 1px solid #e0e0e0; cursor: grab; display: flex !important; justify-content: space-between !important; align-items: center !important; }
     .task-card:active { cursor: grabbing; }
@@ -414,16 +246,7 @@ BASE = r"""<!doctype html>
     .overdue-badge { font-size: .8rem; font-weight:600; color:#c0392b; }
     .small-muted { font-size:.82rem; color:#888; }
     .navbar { border-bottom: 1px solid #e8eee9; }
-    /* PWA safe area dla iPhone z notchem */
-    body { padding-bottom: env(safe-area-inset-bottom); }
   </style>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      });
-    }
-  </script>
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm mb-4">
@@ -440,15 +263,12 @@ BASE = r"""<!doctype html>
         <div class="app-sub">Planer sprzatania domu</div>
       </div>
     </a>
-    <div class="ms-auto d-flex gap-2 flex-wrap align-items-center">
+    <div class="ms-auto d-flex gap-2 flex-wrap">
       <a class="btn btn-outline-primary btn-sm" href="/manage">Panel</a>
       <a class="btn btn-outline-success btn-sm" href="/schedule">Harmonogram</a>
       <a class="btn btn-outline-info btn-sm" href="/periodic">Okresowe</a>
       <a class="btn btn-outline-warning btn-sm" href="/quick">Malo czasu</a>
       <a class="btn btn-outline-secondary btn-sm" href="/settings">Ustawienia</a>
-      <form method="post" action="/logout" class="m-0">
-        <button class="btn btn-danger btn-sm">&#x2192; Wyloguj</button>
-      </form>
     </div>
   </div>
 </nav>
@@ -466,53 +286,7 @@ def render_page(body, **ctx):
 
 # --- Routes ---
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    error = None
-    email = ""
-    if request.method == "POST":
-        email = (request.form.get("email") or "").strip()
-        password = request.form.get("password", "")
-        _, err = firebase_sign_in(email, password)
-        if err is None:
-            session["logged_in"] = True
-            session["email"] = email
-            return redirect(url_for("index"))
-        error = err
-    return render_template_string(LOGIN_PAGE, error=error, email=email)
-
-
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    error = None
-    success = None
-    email = ""
-    if request.method == "POST":
-        email = (request.form.get("email") or "").strip()
-        password = request.form.get("password", "")
-        confirm = request.form.get("confirm", "")
-        if password != confirm:
-            error = "Hasła nie są zgodne."
-        elif len(password) < 6:
-            error = "Hasło musi mieć co najmniej 6 znaków."
-        else:
-            _, err = firebase_sign_up(email, password)
-            if err is None:
-                success = "Konto utworzone! Możesz się teraz zalogować."
-                email = ""
-            else:
-                error = err
-    return render_template_string(REGISTER_PAGE, error=error, success=success, email=email)
-
-
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-
 @app.route("/")
-@login_required
 def index():
     data = load_data()
     ensure_corridor_task(data)
@@ -539,11 +313,12 @@ def index():
       {% if tasks %}
         {% for item in tasks %}
           {% set p = item.task.priority | int %}
-          <div class="task-card priority-{{ p }} d-flex justify-content-between align-items-center" style="background-color: {{ item.room_color }}; border: 2px solid {{ item.room_color }}; opacity: 0.95;">
+          <div class="task-card d-flex justify-content-between align-items-center">
             <div>
               <div style="font-weight:600; font-size:1rem;">
                 {{ item.task.name }}
                 {% if item.task.one_time %}<span class="badge bg-info text-dark ms-1" style="font-size:.7rem;">Jednorazowe</span>{% endif %}
+                <span class="badge badge-p{{ p }} ms-1" style="font-size:.7rem;">P{{ p }}</span>
               </div>
               <div class="small-muted mt-1">
                 Pokoj: <strong>{{ item.room_name }}</strong>
@@ -593,7 +368,6 @@ def index():
 
 
 @app.route("/done/<task_id>", methods=["POST"])
-@login_required
 def mark_done(task_id):
     data = load_data()
     _, task = find_task(data, task_id)
@@ -608,7 +382,6 @@ def mark_done(task_id):
 
 
 @app.route("/manage")
-@login_required
 def manage():
     data = load_data()
     body = """
@@ -724,8 +497,8 @@ def manage():
                {% if not r.tasks %}style="padding:0.75rem 1rem; color:#999; border:1px dashed #ddd; border-radius:8px; background:#fafafa;"{% endif %}>
             {% if r.tasks %}
               {% for t in r.tasks %}
-              <div class="task-card priority-{{ t.priority }} d-flex justify-content-between align-items-center"
-                   draggable="true" data-task-id="{{ t.id }}" data-room-id="{{ r.id }}" style="background-color: {{ r.color }}; border: 2px solid {{ r.color }}; opacity: 0.95;">
+              <div class="task-card d-flex justify-content-between align-items-center"
+                   draggable="true" data-task-id="{{ t.id }}" data-room-id="{{ r.id }}">
                 <div style="flex:1; min-width:0;">
                   <div style="font-weight:600; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     {{ t.name }}
@@ -736,9 +509,7 @@ def manage():
                       {% if t.freq_type == 'weekly' %}{{ week_days_str(week_day_names, t.week_days) }}{% elif t.freq_type == 'periodic' %}Co {{ t.freq_value }} {{ freq_unit_labels.get(t.freq_unit, '') }}{% endif %}
                       | Ostatnio: {{ t.last_done or "-" }}
                     {% endif %}
-                    <span class="badge {% if t.priority==3 %}bg-danger{% elif t.priority==2 %}bg-warning text-dark{% else %}bg-success{% endif %}">
-                      P{{ t.priority }}
-                    </span>
+                    <span class="badge badge-p{{ t.priority }}">P{{ t.priority }}</span>
                   </div>
                 </div>
                 <div class="ms-3 d-flex gap-1 align-items-center flex-shrink-0">
@@ -905,6 +676,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 });
 </script>
+</script>
 """
     wd_names = WEEK_DAYS_SHORT
     return render_page(body, rooms=data["rooms"],
@@ -915,7 +687,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 @app.route("/add_room", methods=["POST"])
-@login_required
 def add_room():
     name = (request.form.get("name") or "").strip()
     color = (request.form.get("color") or "#f5f5f5").strip()
@@ -928,7 +699,6 @@ def add_room():
 
 
 @app.route("/add_task", methods=["POST"])
-@login_required
 def add_task():
     data = load_data()
     name = (request.form.get("name") or "").strip()
@@ -982,7 +752,6 @@ def add_task():
 
 
 @app.route("/edit_task/<task_id>", methods=["POST"])
-@login_required
 def edit_task(task_id):
     data = load_data()
     _, task = find_task(data, task_id)
@@ -1017,7 +786,6 @@ def edit_task(task_id):
 
 
 @app.route("/delete_task/<task_id>", methods=["POST"])
-@login_required
 def delete_task(task_id):
     data = load_data()
     for r in data["rooms"]:
@@ -1027,7 +795,6 @@ def delete_task(task_id):
 
 
 @app.route("/move_task/<task_id>", methods=["POST"])
-@login_required
 def move_task(task_id):
     data = load_data()
     new_room_id = request.form.get("new_room_id", "")
@@ -1046,7 +813,6 @@ def move_task(task_id):
 
 
 @app.route("/move_room/<room_id>", methods=["POST"])
-@login_required
 def move_room(room_id):
     data = load_data()
     new_position = request.form.get("new_position", "")
@@ -1075,7 +841,6 @@ def move_room(room_id):
 
 
 @app.route("/update_room_color/<room_id>", methods=["POST"])
-@login_required
 def update_room_color(room_id):
     color = (request.form.get("color") or "#f5f5f5").strip()
     data = load_data()
@@ -1087,7 +852,6 @@ def update_room_color(room_id):
 
 
 @app.route("/quick")
-@login_required
 def quick():
     data = load_data()
     cnt = max(1, int(data["settings"].get("quick_count", 2) or 2))
@@ -1106,11 +870,14 @@ def quick():
   <p class="small-muted mb-3">Pokazuje {{ cnt }} najwazniejszych zadan.</p>
   {% if tasks %}
     {% for it in tasks %}
-      <div class="task-card priority-{{ it.task.priority }} d-flex justify-content-between align-items-center" style="background-color: {{ it.room.color }}; border: 2px solid {{ it.room.color }}; opacity: 0.95;">
+      <div class="task-card d-flex justify-content-between align-items-center">
         <div>
-          <div style="font-weight:600; font-size:1rem;">{{ it.task.name }}</div>
+          <div style="font-weight:600; font-size:1rem;">
+            {{ it.task.name }}
+            <span class="badge badge-p{{ it.task.priority }} ms-1" style="font-size:.7rem;">P{{ it.task.priority }}</span>
+          </div>
           <div class="small-muted mt-1">
-            Pokoj: <strong>{{ it.room.name }}</strong> | Priorytet {{ it.task.priority }} | Ostatnio: {{ it.task.last_done or "-" }}
+            Pokoj: <strong>{{ it.room.name }}</strong> | Ostatnio: {{ it.task.last_done or "-" }}
           </div>
         </div>
         <div class="text-end ms-3">
@@ -1132,7 +899,6 @@ def quick():
 
 
 @app.route("/settings", methods=["GET", "POST"])
-@login_required
 def settings():
     data = load_data()
     saved = False
@@ -1188,7 +954,6 @@ def settings():
 
 
 @app.route("/schedule")
-@login_required
 def schedule_view():
     data = load_data()
     sched = [[] for _ in range(7)]
@@ -1257,9 +1022,9 @@ def schedule_view():
     box-shadow: 0 1px 4px rgba(0,0,0,.08);
   }
   .sched-task:last-child { margin-bottom: 0; }
-  .sched-task.p3 { border-left-color: #dc3545; background: #fff5f5; }
-  .sched-task.p2 { border-left-color: #ffc107; background: #fffdf0; }
-  .sched-task.p1 { border-left-color: #28a745; background: #f3fff6; }
+  .sched-task.p3 { border-left-color: rgba(220, 53, 69, 0.45); }
+  .sched-task.p2 { border-left-color: rgba(255, 193, 7, 0.6); }
+  .sched-task.p1 { border-left-color: rgba(40, 167, 69, 0.45); }
   .sched-task .t-name {
     font-weight: 700;
     font-size: .88rem;
@@ -1326,17 +1091,11 @@ def schedule_view():
     <div class="sched-body {% if i == today_wd %}today{% endif %}">
       {% if sched[i] %}
         {% for item in sched[i] %}
-        <div class="sched-task p{{ item.task.priority }}" style="background-color: {{ item.room_color }}; border-left-color: {{ item.room_color }};opacity: 0.95;">
+        <div class="sched-task p{{ item.task.priority }}">
           <div class="t-name">{{ item.task.name }}</div>
           <div class="t-room">Pokoj: {{ item.room_name }}</div>
           <div class="t-meta">
-            {% if item.task.priority == 3 %}
-              <span style="color:#dc3545; font-weight:600;">Wysoki</span>
-            {% elif item.task.priority == 2 %}
-              <span style="color:#e09000; font-weight:600;">Sredni</span>
-            {% else %}
-              <span style="color:#28a745; font-weight:600;">Niski</span>
-            {% endif %}
+            <span class="badge badge-p{{ item.task.priority }}">P{{ item.task.priority }}</span>
             |
             {% if item.task.last_done %}
               <span>OK: {{ item.task.last_done }}</span>
@@ -1368,7 +1127,6 @@ def schedule_view():
 
 
 @app.route("/periodic")
-@login_required
 def periodic_view():
     data = load_data()
     today_d = today()
@@ -1419,7 +1177,7 @@ def periodic_view():
             <div class="small-muted">{{ item.room_name }}</div>
             <div class="mt-1 d-flex gap-1 flex-wrap">
               <span class="badge bg-light text-dark border" style="font-size:.78rem;">{{ item.flabel }}</span>
-              <span class="badge {% if p==3 %}bg-danger{% elif p==2 %}bg-warning text-dark{% else %}bg-success{% endif %}">P{{ p }}</span>
+              <span class="badge badge-p{{ p }}">P{{ p }}</span>
             </div>
             <div class="mt-2" style="font-size:.85rem;">
               <span class="text-muted">Ostatnio:</span>
@@ -1459,40 +1217,13 @@ def periodic_view():
     return render_page(body, tasks=periodic_tasks)
 
 
-# --- PWA ---
-
-@app.route('/sw.js')
-def service_worker():
-    return send_from_directory('static', 'sw.js',
-                               mimetype='application/javascript')
-
-
-def get_local_ip():
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
-
-
 # --- Run ---
 
 if __name__ == "__main__":
     load_data()
-    local_ip = get_local_ip()
     url = f"http://127.0.0.1:{APP_PORT}/"
-    print(f"\n{'='*50}")
-    print(f"  AgatClean uruchomiony!")
-    print(f"  Komputer:  http://127.0.0.1:{APP_PORT}/")
-    print(f"  Telefon:   http://{local_ip}:{APP_PORT}/")
-    print(f"  (oba urzadzenia musza byc w tej samej sieci Wi-Fi)")
-    print(f"{'='*50}\n")
     try:
         webbrowser.open(url)
     except Exception:
         pass
-    app.run(host="0.0.0.0", port=APP_PORT, debug=False)
+    app.run(host="127.0.0.1", port=APP_PORT, debug=False)
