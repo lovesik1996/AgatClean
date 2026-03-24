@@ -5,85 +5,297 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>AgatClean</title>
   <meta name="theme-color" content="#1a73e8">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #f7faf9;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    .logo {
-      width: 96px;
-      height: 96px;
-      border-radius: 20px;
-      margin-bottom: 1.5rem;
-    }
-    h1 {
-      font-size: 1.8rem;
-      font-weight: 700;
-      color: #1a73e8;
-      margin-bottom: 0.4rem;
-    }
-    p {
-      font-size: 0.95rem;
-      color: #666;
-      margin-bottom: 2rem;
-    }
-    .spinner {
-      width: 36px;
-      height: 36px;
-      border: 3px solid #e0e0e0;
-      border-top-color: #1a73e8;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    .offline-msg {
-      display: none;
-      background: #fff3cd;
-      border: 1px solid #ffc107;
-      border-radius: 8px;
-      padding: 1rem 1.5rem;
-      margin-top: 1.5rem;
-      font-size: 0.9rem;
-      color: #856404;
-      text-align: center;
-      max-width: 300px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-  </style>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <svg class="logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="64" height="64" rx="12" fill="#1a73e8"/>
-    <rect x="14" y="18" width="36" height="7" rx="3" fill="white"/>
-    <rect x="14" y="31" width="28" height="7" rx="3" fill="white"/>
-    <rect x="14" y="44" width="20" height="7" rx="3" fill="white"/>
-  </svg>
-  <h1>AgatClean</h1>
-  <p>Planer sprzątania domu</p>
-  <div class="spinner" id="spinner"></div>
-  <div class="offline-msg" id="offlineMsg">
-    Brak połączenia z internetem.<br>
-    Sprawdź Wi-Fi lub dane mobilne<br>i otwórz aplikację ponownie.
+
+<!-- ═══════════════════════════════════════════════════════
+     SPLASH SCREEN
+═══════════════════════════════════════════════════════ -->
+<div id="splash">
+  <div class="splash-logo">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect x="10" y="16" width="44" height="8" rx="4"/>
+      <rect x="10" y="30" width="34" height="8" rx="4"/>
+      <rect x="10" y="44" width="24" height="8" rx="4"/>
+    </svg>
+  </div>
+  <div class="splash-title">AgatClean</div>
+  <div class="splash-sub">Planer sprzątania domu</div>
+  <div class="splash-spinner"></div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     APLIKACJA GŁÓWNA
+═══════════════════════════════════════════════════════ -->
+<div id="app-shell" class="hidden">
+
+  <!-- Offline banner (pojawia się gdy brak sieci) -->
+  <div id="offline-banner" class="offline-banner">
+    <svg viewBox="0 0 24 24">
+      <path d="M23.64 7c-.45-.34-4.35-3-11.64-3-1.5 0-2.89.19-4.15.48L18.18 13.8 23.64 7zm-6.6 8.22L3.27 1.44 2 2.72l2.05 2.06C1.91 5.76.59 6.49 0 7l11.63 14.22L13 19.54l1.4 1.4 1.42-1.42-1.41-1.42 3.65-4.46-.02.58z"/>
+    </svg>
+    Tryb offline – dane z lokalnej bazy
   </div>
 
-  <script type="module">
-    import { Capacitor } from 'https://unpkg.com/@capacitor/core@6.2.0/dist/index.js';
+  <!-- ══════════════════════ HOME ══════════════════════ -->
+  <div id="screen-home" class="screen">
+    <header class="app-header">
+      <svg viewBox="0 0 64 64" width="28" height="28" style="flex-shrink:0">
+        <rect x="8" y="14" width="36" height="7" rx="3" fill="#fff"/>
+        <rect x="8" y="27" width="28" height="7" rx="3" fill="#fff"/>
+        <rect x="8" y="40" width="20" height="7" rx="3" fill="#fff"/>
+      </svg>
+      <span class="header-title">AgatClean</span>
+      <div id="sync-dot" class="sync-dot" title="Status synchronizacji"></div>
+      <button class="icon-btn" title="Synchronizuj teraz" onclick="window._manualSync()">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0020 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 004 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+        </svg>
+      </button>
+    </header>
 
-    // Gdy serwer odpowie – Capacitor ładuje server.url automatycznie
-    // Ta strona pokazuje się tylko gdy serwer jest niedostępny
-    window.addEventListener('load', () => {
-      setTimeout(() => {
-        if (!navigator.onLine) {
-          document.getElementById('spinner').style.display = 'none';
-          document.getElementById('offlineMsg').style.display = 'block';
-        }
-      }, 3000);
-    });
-  </script>
+    <div class="scroll-content">
+      <!-- Baner z datą -->
+      <div class="today-banner">
+        <div class="today-date" id="home-date">ładowanie daty...</div>
+        <div class="today-greeting">Dzień dobry! Co dziś sprzątamy?</div>
+      </div>
+
+      <!-- Statystyki -->
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">Wszystkich zadań</div>
+        </div>
+        <div class="stat-card done">
+          <div class="stat-value" id="stat-done">0</div>
+          <div class="stat-label">Zrobionych dziś</div>
+        </div>
+        <div class="stat-card overdue">
+          <div class="stat-value" id="stat-overdue">0</div>
+          <div class="stat-label">Zaległych</div>
+        </div>
+      </div>
+
+      <!-- Zadania na dziś -->
+      <div class="section-header">Na dziś</div>
+      <div id="home-tasks-list"></div>
+
+      <!-- Zaległe -->
+      <div id="home-overdue-section">
+        <div class="section-header" style="color:var(--danger)">⚠ Zaległe</div>
+        <div id="home-overdue-list"></div>
+      </div>
+
+      <div style="height:.5rem"></div>
+    </div>
+  </div><!-- /screen-home -->
+
+  <!-- ══════════════════════ ROOMS ══════════════════════ -->
+  <div id="screen-rooms" class="screen">
+    <header class="app-header">
+      <span class="header-title">Pokoje i zadania</span>
+      <button class="icon-btn" onclick="window._openAddRoom()" title="Dodaj pokój">
+        <svg viewBox="0 0 24 24">
+          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="scroll-content">
+      <div id="rooms-list"></div>
+      <div style="height:1rem"></div>
+    </div>
+
+    <!-- FAB: dodaj pokój -->
+    <button class="fab" onclick="window._openAddRoom()" title="Nowy pokój">
+      <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+    </button>
+  </div><!-- /screen-rooms -->
+
+  <!-- ══════════════════════ QUICK ══════════════════════ -->
+  <div id="screen-quick" class="screen">
+    <header class="app-header">
+      <span class="header-title">Szybkie sprzątanie</span>
+      <button class="icon-btn" onclick="window._quickRefresh()" title="Losuj ponownie">
+        <svg viewBox="0 0 24 24">
+          <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+        </svg>
+      </button>
+    </header>
+
+    <div class="scroll-content">
+      <!-- Kontrolki liczby zadań -->
+      <div class="quick-controls">
+        <div class="quick-count-ctrl">
+          <span>Liczba zadań:</span>
+          <button class="quick-count-btn" onclick="window._quickCountChange(-1)">−</button>
+          <span class="quick-count-num" id="quick-count-num">2</span>
+          <button class="quick-count-btn" onclick="window._quickCountChange(1)">+</button>
+        </div>
+        <button class="btn btn-secondary" style="font-size:.82rem;padding:.4rem .9rem"
+                onclick="window._quickRefresh()">
+          <svg viewBox="0 0 24 24" style="width:16px;height:16px">
+            <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+          </svg>
+          Losuj
+        </button>
+      </div>
+
+      <div class="quick-tasks" id="quick-tasks-list"></div>
+      <div style="height:.5rem"></div>
+    </div>
+  </div><!-- /screen-quick -->
+
+  <!-- ══════════════════════ SETTINGS ══════════════════════ -->
+  <div id="screen-settings" class="screen">
+    <header class="app-header">
+      <span class="header-title">Ustawienia</span>
+    </header>
+
+    <div class="scroll-content no-nav">
+
+      <!-- Synchronizacja -->
+      <div class="settings-group">
+        <div class="settings-group-title">Synchronizacja</div>
+
+        <div class="settings-item" onclick="window._manualSync()">
+          <div class="settings-item-icon blue">
+            <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0020 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 004 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-label">Synchronizuj teraz</div>
+            <div class="settings-item-value" id="settings-sync-value">Sprawdzanie...</div>
+          </div>
+          <div class="settings-item-chevron">
+            <svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+          </div>
+        </div>
+
+        <div class="settings-item">
+          <div class="settings-item-icon orange">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-label">Oczekujące zmiany</div>
+            <div class="settings-item-value" id="settings-pending-value">Sprawdzanie...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Szybkie sprzątanie -->
+      <div class="settings-group">
+        <div class="settings-group-title">Szybkie sprzątanie</div>
+
+        <div class="settings-item">
+          <div class="settings-item-icon green">
+            <svg viewBox="0 0 24 24"><path d="M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-label">Liczba losowanych zadań</div>
+            <div class="settings-item-value" id="settings-quick-count">2</div>
+          </div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <button class="quick-count-btn" onclick="window._quickCountChange(-1)">−</button>
+            <button class="quick-count-btn" onclick="window._quickCountChange(1)">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Konto -->
+      <div class="settings-group">
+        <div class="settings-group-title">Konto i serwer</div>
+
+        <div class="settings-item">
+          <div class="settings-item-icon blue">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-label">Serwer</div>
+            <div class="settings-item-value">agatclean.onrender.com</div>
+          </div>
+        </div>
+
+        <div class="settings-item" onclick="window._logout()" style="color:var(--danger)">
+          <div class="settings-item-icon red">
+            <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-label" style="color:var(--danger)">Wyloguj z serwera</div>
+            <div class="settings-item-value">Dane lokalne pozostaną</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- O aplikacji -->
+      <div class="settings-group" style="margin-bottom:calc(var(--nav-h) + var(--safe-bottom) + 1rem)">
+        <div class="settings-group-title">O aplikacji</div>
+        <div class="settings-item">
+          <div class="settings-item-icon green">
+            <svg viewBox="0 0 64 64">
+              <rect x="8" y="14" width="36" height="7" rx="3" fill="currentColor"/>
+              <rect x="8" y="27" width="28" height="7" rx="3" fill="currentColor"/>
+              <rect x="8" y="40" width="20" height="7" rx="3" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-label">AgatClean</div>
+            <div class="settings-item-value">v1.0 · Offline-first · SQLite</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /screen-settings -->
+
+  <!-- ══════════════════════ DOLNE MENU ══════════════════════ -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-tab="home" onclick="window._nav('home')">
+      <span id="nav-badge-home" class="nav-badge"></span>
+      <svg viewBox="0 0 24 24">
+        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+      </svg>
+      Dom
+    </button>
+
+    <button class="nav-item" data-tab="rooms" onclick="window._nav('rooms')">
+      <svg viewBox="0 0 24 24">
+        <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/>
+      </svg>
+      Pokoje
+    </button>
+
+    <button class="nav-item" data-tab="quick" onclick="window._nav('quick')">
+      <svg viewBox="0 0 24 24">
+        <path d="M7 2v11h3v9l7-12h-4l4-8z"/>
+      </svg>
+      Szybkie
+    </button>
+
+    <button class="nav-item" data-tab="settings" onclick="window._nav('settings')">
+      <svg viewBox="0 0 24 24">
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      </svg>
+      Ustawienia
+    </button>
+  </nav>
+
+</div><!-- /app-shell -->
+
+<!-- ══════════════════════ MODAL ══════════════════════ -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal-sheet">
+    <!-- wypełniane przez app.js -->
+  </div>
+</div>
+
+<!-- ══════════════════════ TOAST ══════════════════════ -->
+<div id="toast" class="toast"></div>
+
+<!-- ══════════════════════ SKRYPTY ══════════════════════ -->
+<script type="module" src="js/app.js"></script>
+
 </body>
 </html>

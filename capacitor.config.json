@@ -2,30 +2,28 @@
   "appId": "pl.agatclean.app",
   "appName": "AgatClean",
   "webDir": "www",
-  "server": {
-    "url": "https://agatclean.onrender.com",
-    "cleartext": false,
-    "androidScheme": "https"
-  },
   "plugins": {
     "SplashScreen": {
-      "launchShowDuration": 2500,
+      "launchShowDuration": 2000,
       "launchAutoHide": true,
       "backgroundColor": "#f7faf9",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_CROP",
       "showSpinner": false,
       "splashFullScreen": true,
-      "splashImmersive": true,
-      "iosSpinnerStyle": "small",
-      "spinnerColor": "#1a73e8"
+      "splashImmersive": true
     },
     "StatusBar": {
       "style": "Light",
       "backgroundColor": "#1a73e8"
     },
-    "App": {
-      "url": "https://agatclean.onrender.com"
+    "CapacitorSQLite": {
+      "iosDatabaseLocation": "Library/CapacitorDatabase",
+      "iosIsEncryption": false,
+      "androidIsEncryption": false,
+      "electronWindowsLocation": "C:\\ProgramData\\CapacitorDatabases",
+      "electronMacLocation": "~/Library/CapacitorDatabases",
+      "electronLinuxLocation": "Databases"
     }
   },
   "android": {

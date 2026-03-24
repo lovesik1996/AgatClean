@@ -13,9 +13,10 @@
     "icons": "npx @capacitor/assets generate"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^6.0.2",
     "@capacitor/android": "^6.2.0",
     "@capacitor/app": "^6.0.2",
-    "@capacitor/core": "^6.2.0",
+    "@capacitor/core": "^6.2.1",
     "@capacitor/ios": "^6.2.0",
     "@capacitor/network": "^6.0.3",
     "@capacitor/splash-screen": "^6.0.2",
@@ -23,6 +24,6 @@
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^6.2.0"
+    "@capacitor/cli": "^6.2.1"
   }
 }
